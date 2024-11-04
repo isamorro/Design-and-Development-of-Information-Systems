@@ -83,7 +83,7 @@ def nuevo_pedido(conn):
             print("\n Por favor, introduzca un número menor que 10000: ")
             cli = input("Código del cliente: ")
 
-        cursor.execute("INSERT INTO pedido (cpedido, ccliente, fecha_pedido) VALUES (:1, :2, to_char(SYSDATE))", (cod, cli))
+        cursor.execute("INSERT INTO pedido (cpedido, ccliente, fecha_pedido) VALUES (:1, :2, SYSDATE)", (cod, cli))
         
         #inicializar 
         cursor.execute("SAVEPOINT savepoint2")
@@ -101,11 +101,23 @@ def nuevo_pedido(conn):
                     print("\n Por favor, introduzca un número menor que 10000: ")
                     cproducto = input("Código del producto (númerico): ")
 
-                cantidad = int(input("Cantidad (numérico): "))
+                cantidad = input("Cantidad (numérico): ")
 
-                cursor.execute("SELECT cantidad FROM stock WHERE cproducto = :1", [cproducto])
+                while (not cantidad.isnumeric()):
+                    print("\n Por favor, introduzca un número menor que 10000: ")
+                    cantidad = input("Código del producto (númerico): ")
                 
-                stock_disponible = cursor.fetchone()[0]
+                cantidad = int(cantidad)
+                cursor.execute("SELECT cantidad FROM stock WHERE cproducto = :1", [cproducto])
+                cortafuegos = cursor.fetchone()
+
+                # Verifica si hay datos en el resultado
+                if cortafuegos is not None:
+                    stock_disponible = cortafuegos[0]
+                else:
+                    print("No se encontraron registros.")
+                    stock_disponible=0
+                
 
                 if cantidad <= stock_disponible:
                     cursor.execute("""
@@ -146,7 +158,7 @@ def mostrar_tablas(conn):
             print(row)
         
         print("\nTabla Pedido:")
-        cursor.execute("SELECT * FROM Pedido")
+        cursor.execute("SELECT cpedido, ccliente, to_char(fecha_pedido, 'DD/MON/YYYY HH24:MI:SS') FROM Pedido")
         for row in cursor:
             print(row)
 
