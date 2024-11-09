@@ -73,7 +73,7 @@ def nuevo_pedido(conn):
 
         print("\nInserta los datos del pedido: ")
 
-        cod = input("Código del pedido (númerico): ")
+        cod = input("Código del pedido (numérico): ")
         while (not cod.isnumeric()):
             print("\n Por favor, introduzca un número menor que 10000: ")
             cod = input("Código del pedido: ")
@@ -96,16 +96,16 @@ def nuevo_pedido(conn):
             opcion = input("Seleccione una opción: ")
 
             if opcion == '1':
-                cproducto = input("Código del producto (númerico): ")
+                cproducto = input("Código del producto (numérico): ")
                 while (not cproducto.isnumeric()):
                     print("\n Por favor, introduzca un número menor que 10000: ")
-                    cproducto = input("Código del producto (númerico): ")
+                    cproducto = input("Código del producto (numérico): ")
 
                 cantidad = input("Cantidad (numérico): ")
 
                 while (not cantidad.isnumeric()):
                     print("\n Por favor, introduzca un número menor que 10000: ")
-                    cantidad = input("Código del producto (númerico): ")
+                    cantidad = input("Código del producto (numérico): ")
                 
                 cantidad = int(cantidad)
                 cursor.execute("SELECT cantidad FROM stock WHERE cproducto = :1", [cproducto])
@@ -144,6 +144,7 @@ def nuevo_pedido(conn):
                 return
             else:
                 print("Opción no válida.")
+
     except oracledb.DatabaseError as e:
         print("Error al procesar el pedido:", e)
         cursor.execute("ROLLBACK TO savepoint1")
