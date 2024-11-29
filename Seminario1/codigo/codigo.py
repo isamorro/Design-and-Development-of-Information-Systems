@@ -15,6 +15,8 @@ def conectar_bd():
 def crear_tablas(conn):
     try:
 		
+        # Crea objeto asociado con la conexión conn
+        # así cursor nos permite interactuar con la BD
         cursor = conn.cursor()
         
 		# Función auxiliar para eliminar tablas si existen
@@ -26,6 +28,8 @@ def crear_tablas(conn):
         drop_table_if_exists('pedido')
         drop_table_if_exists('stock')
         
+        # Se vuelven a crear las tablas
+        # cursor.execute nos permite ejecutar sentencias SQL
         cursor.execute("""
         CREATE TABLE stock (
             cproducto NUMBER(4) CONSTRAINT Cproducto PRIMARY KEY,
@@ -58,8 +62,17 @@ def crear_tablas(conn):
          (7, 70), (8, 80), (9, 90), 
          (10, 100)])
         
+        # Aqui estamos diciendo que a inserción de las 10 tuplas es una sola 
+        # transacción
+        # Pero conceptualmente se deberían hacer las 10 operaciones de inserción
+        # por separado
+        # Se debe hacer cada inserción con un commit
+
+        # conn.commit confirma los cambios realizados en la BD durante la sesión
+        # si no se ejecuta, los cmabios no se reflejan en la BD
         conn.commit()
         print("\nTablas creadas y datos insertados.")
+
     except oracledb.DatabaseError as e:
         print("Error al crear las tablas o insertar datos:", e)
         conn.rollback()
@@ -69,15 +82,21 @@ def crear_tablas(conn):
 def nuevo_pedido(conn):
     try:
         cursor = conn.cursor()
+
+        # Elimina el pedido y todos sus detalles
+        # Este safepoint en realidad no debería estar es innecesario, no es un punto intermedio
+        # Se bería hacer un rollback a secas
         cursor.execute("SAVEPOINT savepoint1")
 
         print("\nInserta los datos del pedido: ")
 
+        # Se pide la inserción del cod de l pedido hasta q sea numérico 
         cod = input("Código del pedido (numérico): ")
         while (not cod.isnumeric()):
             print("\n Por favor, introduzca un número menor que 10000: ")
             cod = input("Código del pedido: ")
 
+        # Se pide cod del cliente hasta que sea numérico
         cli = input("Código del cliente (numérico): ")
         while (not cli.isnumeric()):
             print("\n Por favor, introduzca un número menor que 10000: ")
@@ -85,16 +104,18 @@ def nuevo_pedido(conn):
 
         cursor.execute("INSERT INTO pedido (cpedido, ccliente, fecha_pedido) VALUES (:1, :2, SYSDATE)", (cod, cli))
         
-        #inicializar 
+        # Savepoint para guardar el pedido pero borrar los detalles-pedido
         cursor.execute("SAVEPOINT savepoint2")
         
         while True:
+
             print("\n1. Añadir detalle de producto")
             print("2. Eliminar todos los detalles de producto")
             print("3. Cancelar pedido")
             print("4. Finalizar pedido")
             opcion = input("Seleccione una opción: ")
 
+            # Añadir detalle de producto
             if opcion == '1':
                 cproducto = input("Código del producto (numérico): ")
                 while (not cproducto.isnumeric()):
@@ -109,16 +130,18 @@ def nuevo_pedido(conn):
                 
                 cantidad = int(cantidad)
                 cursor.execute("SELECT cantidad FROM stock WHERE cproducto = :1", [cproducto])
+                # cortafuegos guarda los resultados del SELECT
                 cortafuegos = cursor.fetchone()
 
                 # Verifica si hay datos en el resultado
                 if cortafuegos is not None:
-                    stock_disponible = cortafuegos[0]
+                    # Guarda la cantidad del SELECT en stock disponible
+                    stock_disponible = cortafuegos[0] 
                 else:
                     print("No se encontraron registros.")
                     stock_disponible=0
                 
-
+                # Eliminamos la cantidad del stock si hay suficiente
                 if cantidad <= stock_disponible:
                     cursor.execute("""
                     INSERT INTO detalle_pedido (cpedido, cproducto, cantidad) 
@@ -129,17 +152,23 @@ def nuevo_pedido(conn):
                 else:
                     print("Stock insuficiente.")
 
+            # Elimina detalles del pedido (pero el pedido no) 
             elif opcion == '2':
                 print("Detalles del pedido eliminados.")
                 cursor.execute("ROLLBACK TO savepoint2")
 
+            # Eliminar pedido por completo
             elif opcion == '3':
                 print("Pedido cancelado.")
+                # Se debe usar un ROLLBACK a secas 
+                # Un savepoint debe estar intermedio
                 cursor.execute("ROLLBACK TO savepoint1")
                 return
             
+            # Se finaliza el pedido, se guarda
             elif opcion == '4':
                 print("Pedido finalizado con éxito.")
+                # Se hacen permanentes los cambios
                 conn.commit()
                 return
             else:
@@ -167,11 +196,13 @@ def mostrar_tablas(conn):
         cursor.execute("SELECT * FROM detalle_pedido")
         for row in cursor:
             print(row)
+
     except oracledb.DatabaseError as e:
         print("Error al mostrar el contenido de las tablas:", e)
 
 # Menú principal
 def menu_principal(conn):
+    
     while True:
         print("\n--- Menú Principal ---")
         print("1. Borrar y crear tablas")
