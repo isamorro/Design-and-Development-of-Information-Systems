@@ -479,7 +479,11 @@ def crear_tablas(conn):
         producto = [
             (1, 'Pizza', 8.50),
             (2, 'Pasta', 7.30),
-            (3, 'Ensalada', 5.90)
+            (3, 'Ensalada', 5.90),
+            (4, 'Albondigas', 6),
+            (5, 'Agua', 2),
+            (6, 'Cerveza', 2.30),
+            (7, 'Pepsi', 2.50)
         ]
 
         #print("INSERTANDO TUPLAS DE PRODUCTO")
@@ -503,9 +507,8 @@ def crear_tablas(conn):
             conn.commit()
 
         mesa = [
-            (1, 'Disponible'),
-            (2, 'Ocupada'),
-            (3, 'Reservada')
+            (1, 'DISPONIBLE'),
+            (2, 'OCUPADA'),
         ]
 
         #print("INSERTANDO TUPLAS DE MESA")
@@ -529,7 +532,7 @@ def crear_tablas(conn):
 
         comanda = [
             (1, 1, 'PAGADO'),
-            (2, 2, 'ACTIVO')
+            (1, 2, 'ACTIVO')
         ]
 
         for com in comanda:
@@ -538,29 +541,34 @@ def crear_tablas(conn):
                 VALUES (:1, :2, :3, SYSDATE)""", com)
             conn.commit()
 
-        # # Insertamos tuplas predefinidas en la tabla entrada_comanda
-        # entrada_comanda = [
-        #     (1, 1, 1, 2),
-        #     (2, 2, 2, 4)
-        # ]
+        # Insertamos tuplas predefinidas en la tabla entrada_comanda
+        entrada_comanda = [
+            (1, 1, 1, 2),
+            (2, 1, 1, 3),
+            (3, 1, 1, 5),
+            (1, 1, 2, 4)
+        ]
 
-        # for ent in entrada_comanda:
-        #     cursor.execute("""
-        #         INSERT INTO entrada_comanda (id_entrada, id_comanda, id_mesa, num_consumidores)
-        #         VALUES (:1, :2, :3, :4)""", ent)
-        #     conn.commit()
+        for ent in entrada_comanda:
+            cursor.execute("""
+                INSERT INTO entrada_comanda (id_entrada, id_comanda, id_mesa, num_consumidores)
+                VALUES (:1, :2, :3, :4)""", ent)
+            conn.commit()
 
-        # # Insertamos tuplas predefinidas en la tabla formado_por
-        # formado_por = [
-        #     (1, 1, 1, 1),
-        #     (2, 2, 2, 3)
-        # ]
+        # Insertamos tuplas predefinidas en la tabla formado_por
+        formado_por = [
+            (1, 1, 1, 1),
+            (2, 1, 1, 4),
+            (3, 1, 1, 6),
+            (1, 1, 2, 3)
+        ]
 
-        # for form in formado_por:
-        #     cursor.execute("""
-        #         INSERT INTO formado_por (id_entrada, id_comanda, id_mesa, id_producto)
-        #         VALUES (:1, :2, :3, :4)""", form)
-        #     conn.commit()
+        for form in formado_por:
+            cursor.execute("""
+                INSERT INTO formado_por (id_entrada, id_comanda, id_mesa, id_producto)
+                VALUES (:1, :2, :3, :4)""", form)
+            conn.commit()
+
         # conn.commit confirma los cambios realizados en la BD durante la sesión
         # si no se ejecuta, los cmabios no se reflejan en la BD
         print("\nTablas creadas y datos insertados.")
@@ -1225,7 +1233,6 @@ def trigger_validar_numero_personas_reserva(conn):
         # Ejecutar el SQL para crear el trigger
         cursor.execute(trigger_sql)
         conn.commit()
-        print("Trigger 'validar_numero_personas_reserva' creado con éxito.")
 
     except oracledb.DatabaseError as e:
         error, = e.args
@@ -1254,7 +1261,6 @@ def trigger_validar_fecha_reserva_posterior(conn):
         # Ejecutar el SQL para crear el trigger
         cursor.execute(trigger_sql)
         conn.commit()
-        print("Trigger 'validar_fecha_reserva_posterior' creado con éxito.")
 
     except oracledb.DatabaseError as e:
         error, = e.args
@@ -1283,7 +1289,6 @@ def trigger_validar_formato_telefono_reserva(conn):
         # Ejecutar el SQL para crear el trigger
         cursor.execute(trigger_sql)
         conn.commit()
-        print("Trigger 'validar_formato_telefono_reserva' creado con éxito.")
 
     except oracledb.DatabaseError as e:
         error, = e.args
@@ -1312,7 +1317,42 @@ def trigger_validar_valores_lugar_reserva(conn):
         # Ejecutar el SQL para crear el trigger
         cursor.execute(trigger_sql)
         conn.commit()
-        print("Trigger 'validar_valores_lugar_reserva' creado con éxito.")
+
+    except oracledb.DatabaseError as e:
+        error, = e.args
+        print(f"Error al crear el trigger: {error.message}")
+        conn.rollback()
+
+    finally:
+        cursor.close()
+
+def trigger_validar_asignacionempleado(conn):
+    try:
+        cursor = conn.cursor()
+
+        # Código del trigger en SQL: verifica que el valor de lugar sea 0 o 1
+        trigger_sql = """
+        CREATE OR REPLACE TRIGGER validar_empleado_asignado
+        BEFORE INSERT OR UPDATE ON encargado_de
+        FOR EACH ROW
+        DECLARE
+            contador_empleados NUMBER;
+        BEGIN
+            SELECT COUNT(*)
+            INTO contador_empleados
+            FROM encargado_de
+            WHERE fecha = :NEW.fecha
+            AND tlf = :NEW.tlf;
+
+            IF contador_empleados > 0 THEN
+                RAISE_APPLICATION_ERROR(-20043, 'La reserva ya tiene un empleado asignado.');
+            END IF;
+        END;
+        """
+
+        # Ejecutar el SQL para crear el trigger
+        cursor.execute(trigger_sql)
+        conn.commit()
 
     except oracledb.DatabaseError as e:
         error, = e.args
@@ -1338,7 +1378,7 @@ def trigger_no_activar_mesa_ocupada(conn):
         BEFORE UPDATE ON mesa
         FOR EACH ROW
         BEGIN
-            IF (:OLD.estado = 'Ocupada' AND :NEW.estado = 'Ocupada') THEN
+            IF (:OLD.estado = 'OCUPADA' AND :NEW.estado = 'OCUPADA') THEN
                 RAISE_APPLICATION_ERROR(-20043, 'Para ocupar una mesa, esta no debe estar ocupada');
             END IF;
         END;
@@ -1355,35 +1395,6 @@ def trigger_no_activar_mesa_ocupada(conn):
 
     finally:
         cursor.close()
-
-def trigger_eliminar_entrada_si_cero(conn):
-    try:
-        cursor = conn.cursor()
-
-        trigger_sql = """
-        CREATE OR REPLACE TRIGGER eliminar_entrada_si_cero
-        AFTER UPDATE ON entrada_comanda
-        FOR EACH ROW
-        BEGIN
-            IF (:NEW.num_consumidores = 0) THEN
-                DELETE FROM formado_por WHERE (id_mesa = :NEW.id_mesa AND id_comanda = :NEW.id_comanda AND id_entrada = :NEW.id_entrada);
-                DELETE FROM entrada_comanda WHERE (id_mesa = :NEW.id_mesa AND id_entrada = :NEW.id_entrada AND id_comanda = :NEW.id_comanda);
-            END IF;
-        END;
-        """
-
-        cursor.execute(trigger_sql)
-        conn.commit()
-        print("Trigger 'eliminar_entrada_si_cero' activado")
-
-    except oracledb.DatabaseError as e:
-        error, = e.args
-        print(f"Error al crear el trigger: {error.message}")
-        conn.rollback()
-
-    finally:
-        cursor.close()
-
 
 
 #===================================================================================
@@ -1419,14 +1430,13 @@ def crear_triggers(conn):
     trigger_validar_fecha_reserva_posterior(conn)
     trigger_validar_formato_telefono_reserva(conn)
     trigger_validar_valores_lugar_reserva(conn)
+    trigger_validar_asignacionempleado(conn)
 
     # disparadores subsistema mesas
     trigger_no_activar_mesa_ocupada(conn)
 
     #otro
     trigger_verificar_si_mesas_asociadas(conn)
-    trigger_eliminar_entrada_si_cero(conn)
-
 #========================================================================================
 #FUNCIONES SUBSISTEMA GESTIÓN EMPLEADOS
 #========================================================================================
@@ -2112,7 +2122,7 @@ def consultar_pedido(conn):
                 JOIN entrada_comanda e ON c.id_mesa = e.id_mesa and c.id_comanda = e.id_comanda
                 JOIN formado_por f ON e.id_mesa = f.id_mesa AND e.id_comanda = f.id_comanda AND e.id_entrada = f.id_entrada
                 JOIN producto p ON p.id_producto = f.id_producto
-                WHERE (c.id_mesa = :ident_mesa)
+                WHERE (c.id_mesa = :ident_mesa AND e.num_consumidores != 0)
             """, {"ident_mesa": numero})
 
         elif (decision.upper() == 'N'):
@@ -2122,7 +2132,7 @@ def consultar_pedido(conn):
                 JOIN entrada_comanda e ON c.id_mesa = e.id_mesa and c.id_comanda = e.id_comanda
                 JOIN formado_por f ON e.id_mesa = f.id_mesa AND e.id_comanda = f.id_comanda AND e.id_entrada = f.id_entrada
                 JOIN producto p ON p.id_producto = f.id_producto
-                WHERE (c.id_mesa = :ident_mesa AND c.estado = 'ACTIVO')
+                WHERE (c.id_mesa = :ident_mesa AND c.estado = 'ACTIVO' AND e.num_consumidores != 0)
             """, {"ident_mesa": numero})
 
         for row in cursor:
@@ -2161,20 +2171,23 @@ def solicitar_cuenta(conn):
             print(f"Recibo de la mesa {numero_mesa}")
             print(f"ID recibo {numero_comanda}")
 
-            print("Nº \tNombre \tPrecio \tConsum. \tTotal")
+            print("Nº \tNombre \t\tPrecio \tConsum. \tSubtotal")
 
             cursor.execute("""
                 SELECT p.nombre, p.precio, e.num_consumidores
                 FROM entrada_comanda e
                 JOIN formado_por f ON e.id_mesa = f.id_mesa AND e.id_comanda = f.id_comanda AND e.id_entrada = f.id_entrada
                 JOIN producto p ON f.id_producto = p.id_producto
-                WHERE (e.id_mesa = :ident_mesa AND e.id_comanda = :ident_comanda)
+                WHERE (e.id_mesa = :ident_mesa AND e.id_comanda = :ident_comanda AND e.num_consumidores != 0)
             """, {"ident_mesa": numero_mesa, "ident_comanda": numero_comanda})
 
             i = 1
             importe_total = 0
             for row in cursor:
-                print(f"{i} \t{row[0]} \t{row[1]} \t{row[2]} \t{row[2]*row[1]}")
+                num_tabs = len(row[0])/8
+                tabulacion = "\t" * (2-int(num_tabs))
+
+                print(f"{i} \t{row[0]}{tabulacion}{row[1]} \t{row[2]} \t\t{row[2]*row[1]}")
                 i+=1
                 importe_total+=row[2]*row[1]
 
@@ -2265,7 +2278,6 @@ def crear_reserva(conn):
             print("Número de personas y lugar deben ser valores numéricos.")
             return
         
-        # Ejecutar la consulta con marcadores de nombres
         sql = """
             INSERT INTO reserva (fecha, telefono, nombre, apellido, numero_personas, lugar) 
             VALUES (TO_DATE(:fecha_hora, 'DD-MM-YYYY HH24:MI'), :telefono, :nombre, :apellido, :numero_personas, :lugar)
