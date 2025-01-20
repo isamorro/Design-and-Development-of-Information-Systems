@@ -509,6 +509,7 @@ def crear_tablas(conn):
         mesa = [
             (1, 'DISPONIBLE'),
             (2, 'OCUPADA'),
+            (3, 'RESERVADA')
         ]
 
         #print("INSERTANDO TUPLAS DE MESA")
@@ -609,17 +610,17 @@ def trigger_verificar_mesas_antes_de_eliminar(conn):
         DECLARE
             mesas_asignadas INT;
         BEGIN
-            -- Contar las mesas asignadas al empleado
             SELECT COUNT(*)
             INTO mesas_asignadas
             FROM mesa m
             JOIN asignado a ON m.id_mesa = a.id_mesa
             WHERE a.dni_empleado = :OLD.dni
-            AND (m.estado = 'Ocupada' OR m_estado = "Reservada");
+            AND (m.estado = 'OCUPADA' OR m.estado = 'RESERVADA');
 
-            -- Si hay mesas asignadas, lanzar un error
             IF mesas_asignadas > 0 THEN
-                RAISE_APPLICATION_ERROR(-20031, 'No se puede eliminar el usuario porque tiene mesas asociadas.');
+                RAISE_APPLICATION_ERROR(-20010, 'No se puede eliminar el usuario porque tiene mesas asociadas.');
+            ELSE
+               DELETE FROM asignado WHERE dni_empleado = :OLD.dni;
             END IF;
         END;"""
 
@@ -647,7 +648,6 @@ def trigger_verificar_repartos_antes_de_eliminar(conn):
         DECLARE
             repartos_asignados INT;
         BEGIN
-            -- Contar los repartos asignadas al empleado
             SELECT COUNT(*)
             INTO repartos_asignados
             FROM pedido p
@@ -655,9 +655,10 @@ def trigger_verificar_repartos_antes_de_eliminar(conn):
             WHERE r.dni = :OLD.dni
             AND p.estado = 'PENDIENTE';
 
-            -- Si hay mesas asignadas, lanzar un error
             IF repartos_asignados > 0 THEN
-                RAISE_APPLICATION_ERROR(-20031, 'No se puede eliminar el usuario porque tiene repartos asociados.');
+                RAISE_APPLICATION_ERROR(-20011, 'No se puede eliminar el usuario porque tiene repartos asociados.');
+            ELSE
+               DELETE FROM reparte WHERE dni = :OLD.dni;
             END IF;
         END;"""
 
@@ -683,7 +684,7 @@ def trigger_verificar_salario_positivo(conn):
         FOR EACH ROW
         BEGIN
             IF :NEW.salario < 0 THEN
-                RAISE_APPLICATION_ERROR(-20003, 'El salario no puede ser negativo.');
+                RAISE_APPLICATION_ERROR(-20012, 'El salario no puede ser negativo.');
             END IF;
         END;
         """
@@ -710,7 +711,7 @@ def trigger_verificar_formato_dni(conn):
         FOR EACH ROW
         BEGIN
             IF :NEW.dni IS NULL OR NOT REGEXP_LIKE(:NEW.dni, '^[0-9]{8}[A-Z]$') THEN
-                RAISE_APPLICATION_ERROR(-20010, 'Error: El DNI debe tener 8 números seguidos de 1 letra mayúscula.');
+                RAISE_APPLICATION_ERROR(-20013, 'Error: El DNI debe tener 8 números seguidos de 1 letra mayúscula.');
             END IF;
         END;
         """
@@ -737,7 +738,7 @@ def trigger_verificar_formato_tlf_empleado(conn):
         FOR EACH ROW
         BEGIN
             IF :NEW.telefono IS NULL OR NOT REGEXP_LIKE(:NEW.telefono, '^\\+?[0-9]{1,3}?[0-9]{1,20}$') THEN
-                RAISE_APPLICATION_ERROR(-20011, 'Error: El teléfono debe ser un número válido con un prefijo opcional.');
+                RAISE_APPLICATION_ERROR(-20014, 'Error: El teléfono debe ser un número válido con un prefijo opcional.');
             END IF;
         END;
         """
@@ -768,7 +769,7 @@ def trigger_verificar_formato_telefono_proveedor(conn):
         FOR EACH ROW
         BEGIN
             IF NOT REGEXP_LIKE(:NEW.telefono, '^\+?\d+$') THEN
-                RAISE_APPLICATION_ERROR(-20020, 'Error: El número debe comenzar con un "+" opcional, seguido solo de dígitos.');
+                RAISE_APPLICATION_ERROR(-20015, 'Error: El número debe comenzar con un "+" opcional, seguido solo de dígitos.');
             END IF;
         END;
         """
@@ -1124,7 +1125,7 @@ def trigger_verificar_si_empleado_existe(conn):
         """
 
         # Ejecutar el SQL para crear el procedimiento
-        cursor.execute(procedure_sql)
+        cursor.execute(trigger)
         conn.commit()
 
 
@@ -1174,43 +1175,85 @@ def trigger_verificar_si_pedido_existe(conn):
     
     finally:
         cursor.close() 
-
-
-#--------------------------------------------------------------------------------------------
-#trigger_verificar_si_pedido_pendiente --- kessler
-def trigger_verificar_si_mesas_asociadas(conn):
+#---------------------------------------------------------------------------------
+#trigger verificar si el pedido tiene asignado un repartidor
+def trigger_verificar_si_pedido_tiene_repartidor_asociado(conn):
     try:
         cursor = conn.cursor()
 
-        # Código del trigger en SQL: comprobar si una mesa está disponible
+        # Define el código del trigger
         trigger_sql = """
-        CREATE OR REPLACE TRIGGER verificar_si_mesas_asociadas
-        BEFORE INSERT ON asignado
+        CREATE OR REPLACE TRIGGER trigger_verificar_si_pedido_tiene_repartidor_asociado
+        BEFORE INSERT ON reparte
         FOR EACH ROW
         DECLARE
-            estado_mesa VARCHAR(20);
+            contador INT;
+
         BEGIN
-            -- obtener el cargo
-            SELECT estado
-            INTO estado_mesa
-            FROM mesa
-            WHERE id_mesa = :NEW.id_mesa;
+        -- Comprobar si el número de producto existe en la tabla producto
 
-            -- Si la mesa no esta activa
-            IF estado_mesa != 'Disponible' THEN
-                RAISE_APPLICATION_ERROR(-20033, 'El mesa no está disponible.');
+            SELECT COUNT(*)
+            INTO contador
+            FROM reparte
+            WHERE id_pedido = :NEW.id_pedido;
+
+            --lanzar una excepción
+            IF contador >0 THEN 
+                
+                RAISE_APPLICATION_ERROR(-20038, 'El pedido ya tiene un repartidor asignado');
             END IF;
-        END;"""
 
-        # Ejecutar el SQL para crear el trigger
+        END;
+        """
+
+        # Ejecutar el SQL para crear el procedimiento
         cursor.execute(trigger_sql)
+        conn.commit()
 
 
     except oracledb.DatabaseError as e:
         error, = e.args
 
+    
     finally:
-        cursor.close()
+        cursor.close()  
+
+
+# #--------------------------------------------------------------------------------------------
+# #trigger_verificar_si_pedido_pendiente --- kessler
+# def trigger_verificar_si_mesas_asociadas(conn):
+#     try:
+#         cursor = conn.cursor()
+
+#         # Código del trigger en SQL: comprobar si una mesa está disponible
+#         trigger_sql = """
+#         CREATE OR REPLACE TRIGGER verificar_si_mesas_asociadas
+#         BEFORE INSERT ON asignado
+#         FOR EACH ROW
+#         DECLARE
+#             estado_mesa VARCHAR(20);
+#         BEGIN
+#             -- obtener el cargo
+#             SELECT estado
+#             INTO estado_mesa
+#             FROM mesa
+#             WHERE id_mesa = :NEW.id_mesa;
+
+#             -- Si la mesa no esta activa
+#             IF estado_mesa != 'Disponible' THEN
+#                 RAISE_APPLICATION_ERROR(-20033, 'El mesa no está disponible.');
+#             END IF;
+#         END;"""
+
+#         # Ejecutar el SQL para crear el trigger
+#         cursor.execute(trigger_sql)
+
+
+#     except oracledb.DatabaseError as e:
+#         error, = e.args
+
+#     finally:
+#         cursor.close()
 
 #===================================================================================
 # Triggers reservas
@@ -1410,7 +1453,6 @@ def crear_triggers(conn):
     trigger_verificar_formato_tlf_empleado(conn)
 
     # triggers subsistema de proveedores 
-    
     trigger_verificar_formato_telefono_proveedor(conn)
     trigger_verificar_formato_correo_proveedor(conn)
     # trigger_verificar_que_no_existen_pedidos_activos_de_proveedor(conn)
@@ -1423,7 +1465,8 @@ def crear_triggers(conn):
     trigger_verificar_si_tlf_usuario_existe(conn)
     trigger_verificar_si_cod_prod_existe(conn)
     trigger_verificar_si_pedido_existe(conn)
-
+    trigger_verificar_si_pedido_tiene_repartidor_asociado(conn)
+    trigger_verificar_si_empleado_existe(conn)
 
     #triggers subsistema reservas
     trigger_validar_numero_personas_reserva(conn)
@@ -1436,38 +1479,60 @@ def crear_triggers(conn):
     trigger_no_activar_mesa_ocupada(conn)
 
     #otro
-    trigger_verificar_si_mesas_asociadas(conn)
+    # trigger_verificar_si_mesas_asociadas(conn)
 #========================================================================================
 #FUNCIONES SUBSISTEMA GESTIÓN EMPLEADOS
 #========================================================================================
 #ALTA EMPLEADO
 def dar_de_alta_empleado(conn):
-    cursor = conn.cursor()
+    try: 
+        cursor = conn.cursor()
 
-    dni_jefe = input("Introduzca su DNI (jefe): ")
-    # cursor.callproc("comprobar_si_jefe", [dni_jefe])
-    nombre = input("Nombre: ")
-    apellido = input("Apellido: ")
-    dni_empleado = input("DNI: ") # se comprueba con un trigger que el formato sea el correcto
-    tlf = input("Telefono: ") # se comprueba con un trigger que el formato sea el correcto
-    cargo = input("Cargo: ")
-    ss = input("Número de la seguridad social: ")
-    salario = input("Salario: ") # se comprueba con un trigger que no sea negativo
+        # Verificar si el usuario es jefe
+        dni_jefe = input("Introduzca su DNI (jefe): ")
+        cursor.execute("SELECT cargo FROM empleado WHERE dni = :dni", {"dni": dni_jefe})
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] != 'JEFE':
+            print("Solo un empleado con cargo JEFE puede realizar esta acción.")
+            return
+        
+        nombre = input("Nombre: ")
+        apellido = input("Apellido: ")
+        dni_empleado = input("DNI: ") # se comprueba con un trigger que el formato sea el correcto
+        tlf = input("Telefono: ") # se comprueba con un trigger que el formato sea el correcto
+        cargo = input("Cargo: ")
+        ss = input("Número de la seguridad social: ")
+        salario = input("Salario: ") # se comprueba con un trigger que no sea negativo
 
-    cursor.execute("INSERT INTO empleado (dni, nombre, apellido, cargo, telefono, num_ss, salario) VALUES (:1, :2, :3, :4, :5, :6, :7)", (dni_empleado, nombre, apellido, cargo, tlf, ss, salario))
-    print("Se ha dado de alta al empleado correctamente")
-    conn.commit()
+        cursor.execute("INSERT INTO empleado (dni, nombre, apellido, cargo, telefono, num_ss, salario) VALUES (:1, :2, :3, :4, :5, :6, :7)", (dni_empleado, nombre, apellido, cargo, tlf, ss, salario))
+        print("Se ha dado de alta al empleado correctamente")
+        conn.commit()
+    except oracledb.DatabaseError as e:
+        error, = e.args
+        print(f"Error: {error.message}")
 
 #----------------------------------------------------------------------------------------
 
 def dar_de_baja_empleado(conn):
     try:
         cursor = conn.cursor()
-        dni_jefe = input("Introduzca su DNI (jefe): ")
-        # cursor.callproc("comprobar_si_jefe", [dni_jefe])
-        dni_empleado = input("DNI del empleado a borrar: ")
-        # cursor.callproc("comprobar_dni_empleado", [dni_empleado])
 
+        # Verificar si el usuario es jefe
+        dni_jefe = input("Introduzca su DNI (jefe): ")
+        cursor.execute("SELECT cargo FROM empleado WHERE dni = :dni", {"dni": dni_jefe})
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] != 'JEFE':
+            print("Solo un empleado con cargo JEFE puede realizar esta acción.")
+            return
+        
+        # Verificar si el empleado existe en la base de datos
+        dni_empleado = input("DNI del empleado a borrar: ")
+        cursor.execute("SELECT * FROM empleado WHERE dni = :dni", {"dni": dni_empleado})
+        resultado = cursor.fetchone()
+        if not resultado:
+            print("El DNI introducido no corresponde a ningún empleado.")
+            return
+        
         # borrado en cascada manual 
         cursor.execute("DELETE FROM hace WHERE dni = :dni", {"dni": dni_empleado})
         cursor.execute("DELETE FROM encargado_de WHERE dni_empleado = :dni", {"dni": dni_empleado})
@@ -1487,15 +1552,27 @@ def dar_de_baja_empleado(conn):
 def modificar_datos_empleado(conn):
     try:
         cursor = conn.cursor()
+
+        # Verificar si el usuario es jefe
         dni_jefe = input("Introduzca su DNI (jefe): ")
-        # cursor.callproc("comprobar_si_jefe", [dni_jefe])
+        cursor.execute("SELECT cargo FROM empleado WHERE dni = :dni", {"dni": dni_jefe})
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] != 'JEFE':
+            print("Solo un empleado con cargo JEFE puede realizar esta acción.")
+            return
+        
+        # Verificar si el empleado existe en la base de datos
         dni_empleado = input("DNI del empleado a modificar: ")
-        # cursor.callproc("comprobar_dni_empleado", [dni_empleado])
+        cursor.execute("SELECT * FROM empleado WHERE dni = :dni", {"dni": dni_empleado})
+        resultado = cursor.fetchone()
+        if not resultado:
+            print("El DNI introducido no corresponde a ningún empleado.")
+            return
 
         comprobacion_tlf = input("¿Quiere modificar el teléfono del empleado? (S sí, N no): ")
         if (comprobacion_tlf == "S" or comprobacion_tlf == "s"):
             tlf = input("Introduzca el nuevo teléfono: ")
-            # habría que poner tlf y num_ss como unique keys segun lo q habiamos puesto en practicas anteriores creo
+            # se ejecutan los triggers correspondientes de formato de tlf y dni
             cursor.execute("UPDATE empleado SET telefono = :tlf WHERE dni = :dni", {"tlf": tlf, "dni": dni_empleado})
             conn.commit()
         
@@ -1514,6 +1591,7 @@ def modificar_datos_empleado(conn):
         comprobacion_salario = input("¿Quiere modificar el salario del empleado? (S sí, N no): ")
         if (comprobacion_salario == "S" or comprobacion_salario == "s"):
             salario = input("Introduzca el nuevo salario: ")
+            # se ejecutá el trigger correspondiente al salario
             cursor.execute("UPDATE empleado SET salario = :salario WHERE dni = :dni", {"salario": salario, "dni": dni_empleado})
             conn.commit()
 
@@ -1526,8 +1604,15 @@ def modificar_datos_empleado(conn):
 
 def listar_empleados(conn):
     cursor = conn.cursor()
+
+    # Verificar si el usuario es jefe
     dni_jefe = input("Introduzca su DNI (jefe): ")
-    # cursor.callproc("comprobar_si_jefe", [dni_jefe])
+    cursor.execute("SELECT cargo FROM empleado WHERE dni = :dni", {"dni": dni_jefe})
+    resultado = cursor.fetchone()
+    if not resultado or resultado[0] != 'JEFE':
+        print("Solo un empleado con cargo JEFE puede realizar esta acción.")
+        return
+    
     cargo = input("Introduzca el cargo por el que quiere filtrar (JEFE, REPARTIDOR). Si quiere verlos todos, introduzca -1: ")
     salario = input("Introduzca el salario a partir del cual quiere filtrar. Si quiere verlos todos, introduzca -1: ")
     
@@ -1536,8 +1621,6 @@ def listar_empleados(conn):
         cursor.execute("""
         SELECT *
         FROM empleado
-        -- JOIN contiene c ON p.id_pedido = c.id_pedido
-        -- JOIN producto pr ON c.id_producto = pr.id_producto
         ORDER BY empleado.apellido
         """)
     elif cargo == "-1":
@@ -1545,8 +1628,6 @@ def listar_empleados(conn):
         cursor.execute("""
         SELECT *
         FROM empleado
-        -- JOIN contiene c ON p.id_pedido = c.id_pedido
-        -- JOIN producto pr ON c.id_producto = pr.id_producto
         WHERE salario > :salario
         ORDER BY empleado.apellido
         """, {"salario": float(salario)})
@@ -1555,8 +1636,6 @@ def listar_empleados(conn):
         cursor.execute("""
         SELECT *
         FROM empleado
-        -- JOIN contiene c ON p.id_pedido = c.id_pedido
-        -- JOIN producto pr ON c.id_producto = pr.id_producto
         WHERE cargo = :cargo
         ORDER BY empleado.apellido
         """, {"cargo": cargo})
@@ -1565,8 +1644,6 @@ def listar_empleados(conn):
         cursor.execute("""
         SELECT *
         FROM empleado
-        -- JOIN contiene c ON p.id_pedido = c.id_pedido
-        -- JOIN producto pr ON c.id_producto = pr.id_producto
         WHERE cargo = :cargo AND salario > :salario
         ORDER BY empleado.apellido
         """, {"cargo": cargo, "salario": salario})
@@ -1580,8 +1657,14 @@ def listar_empleados(conn):
 
 def reporta_incidencia(conn):
     cursor = conn.cursor()
+
+    # Verificar si el empleado existe en la base de datos
     dni = input("Introduzca su DNI: ")
-    # cursor.callproc("comprobar_dni_empleado", [dni])
+    cursor.execute("SELECT * FROM empleado WHERE dni = :dni", {"dni": dni})
+    resultado = cursor.fetchone()
+    if not resultado:
+        print("El DNI introducido no corresponde a ningún empleado.")
+        return
 
     cursor.execute("""
     SELECT COUNT(*)
@@ -1867,8 +1950,13 @@ def hacer_pedido_online(conn):
             #disparador que controla que los productos existen
             cursor.execute("INSERT INTO contiene (id_pedido, id_producto, cantidad) VALUES (:1, :2, :3)",(id_pedido, cod_pro, cantidad))
             cod_pro = input ("Codigo producto. Para salir pulse 0: ")
-        
-        conn.commit()
+            
+
+        cursor.execute("""SELECT COUNT(*) FROM contiene WHERE (id_pedido = :id_pedido)""", {"id_pedido": id_pedido} )
+        if (cursor.fetchone()[0]==0):
+            conn.rollback()
+        else:
+            conn.commit()
         
     except oracledb.DatabaseError as e:
         error, = e.args
@@ -1926,9 +2014,11 @@ def asignar_repartidor(conn):
         #disparador que controle si corresponde a un repartidor
         #disparador que compruebe si es empleado
         #disparador que compruebe si existe el pedido
+        #disparador que compruebe que el pedido no tiene repartidores asignados
         id_pedido = input("id_pedido: ")
         cursor.callproc("comprobar_pedido", [id_pedido])
         cursor.execute("INSERT INTO reparte(id_pedido,dni)VALUES (:1,:2)",(id_pedido,dni_empleado))
+        print ("el pedido " ,id_pedido, " será repartido por el empleado con dni " , dni_empleado)
         conn.commit()
     except oracledb.DatabaseError as e:
         error, = e.args
@@ -1950,7 +2040,7 @@ def activar_mesa(conn):
 
         cursor.execute("""
             UPDATE mesa
-            SET estado = 'Ocupada'
+            SET estado = 'OCUPADA'
             WHERE id_mesa = :identif
         """, {"identif": numero})
 
@@ -2865,6 +2955,7 @@ def menu_principal(conn):
 if __name__ == "__main__":
     conn = conectar_bd()
     if conn:
+        crear_tablas(conn)
         crear_triggers(conn)
         mostrar_tablas(conn)
         menu_principal(conn)
